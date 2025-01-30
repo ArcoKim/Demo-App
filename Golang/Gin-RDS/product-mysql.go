@@ -14,15 +14,14 @@ import (
 
 // DBConfig는 데이터베이스 연결 정보를 저장하는 구조체입니다.
 type DBConfig struct {
-	ReaderEndpoint string `json:"reader_endpoint"`
-	WriterEndpoint string `json:"writer_endpoint"`
-	Username       string `json:"username"`
-	Password       string `json:"password"`
-	Database       string `json:"database"`
+	Host     string `json:"host"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Port     int    `json:"port"`
+	Database string `json:"dbname"`
 }
 
-var readerDB *sql.DB
-var writerDB *sql.DB
+var db *sql.DB
 
 func initDB() {
 	// 환경 변수에서 JSON 형태의 데이터베이스 연결 정보를 가져옵니다.
@@ -33,14 +32,8 @@ func initDB() {
 		log.Fatal("Failed to parse DB config:", err)
 	}
 
-	// Reader 엔드포인트를 사용하여 데이터베이스에 연결합니다.
-	readerDB, err = sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s)/%s", config.Username, config.Password, config.ReaderEndpoint, config.Database))
-	if err != nil {
-		log.Fatal("Failed to connect to the reader database:", err)
-	}
-
-	// Writer 엔드포인트를 사용하여 데이터베이스에 연결합니다.
-	writerDB, err = sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s)/%s", config.Username, config.Password, config.WriterEndpoint, config.Database))
+	// RDS 엔드포인트를 사용하여 데이터베이스에 연결합니다.
+	db, err = sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", config.Username, config.Password, config.Host, config.Port, config.Database))
 	if err != nil {
 		log.Fatal("Failed to connect to the writer database:", err)
 	}
@@ -49,8 +42,7 @@ func initDB() {
 func main() {
 	// 데이터베이스 초기화
 	initDB()
-	defer readerDB.Close()
-	defer writerDB.Close()
+	defer db.Close()
 
 	// Gin 라우터 생성
 	router := gin.Default()
@@ -67,8 +59,8 @@ func main() {
 }
 
 func healthCheck(c *gin.Context) {
-	// readerDB의 핑 테스트를 수행하여 상태를 확인합니다.
-	if err := readerDB.Ping(); err != nil {
+	// DB에 핑 테스트를 수행하여 상태를 확인합니다.
+	if err := db.Ping(); err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unhealthy"})
 		return
 	}
@@ -79,9 +71,9 @@ func healthCheck(c *gin.Context) {
 func getUser(c *gin.Context) {
 	id := c.Param("id")
 
-	// readerDB를 사용하여 데이터베이스에서 사용자 정보를 조회합니다.
+	// 데이터베이스에서 사용자 정보를 조회합니다.
 	var name string
-	err := readerDB.QueryRow("SELECT name FROM users WHERE id = ?", id).Scan(&name)
+	err := db.QueryRow("SELECT name FROM users WHERE id = ?", id).Scan(&name)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user"})
 		return
@@ -101,8 +93,8 @@ func createUser(c *gin.Context) {
 		return
 	}
 
-	// writerDB를 사용하여 데이터베이스에 사용자 정보를 추가합니다.
-	_, err := writerDB.Exec("INSERT INTO users (id, name) VALUES (?, ?)", user.ID, user.Name)
+	// 데이터베이스에 사용자 정보를 추가합니다.
+	_, err := db.Exec("INSERT INTO users (id, name) VALUES (?, ?)", user.ID, user.Name)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
 		return
@@ -123,8 +115,8 @@ func updateUser(c *gin.Context) {
 		return
 	}
 
-	// writerDB를 사용하여 데이터베이스에서 사용자 정보를 업데이트합니다.
-	_, err := writerDB.Exec("UPDATE users SET name = ? WHERE id = ?", user.Name, id)
+	// 데이터베이스에서 사용자 정보를 업데이트합니다.
+	_, err := db.Exec("UPDATE users SET name = ? WHERE id = ?", user.Name, id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user"})
 		return
@@ -136,8 +128,8 @@ func updateUser(c *gin.Context) {
 func deleteUser(c *gin.Context) {
 	id := c.Param("id")
 
-	// writerDB를 사용하여 데이터베이스에서 사용자 정보를 삭제합니다.
-	_, err := writerDB.Exec("DELETE FROM users WHERE id = ?", id)
+	// 데이터베이스에서 사용자 정보를 삭제합니다.
+	_, err := db.Exec("DELETE FROM users WHERE id = ?", id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user"})
 		return
