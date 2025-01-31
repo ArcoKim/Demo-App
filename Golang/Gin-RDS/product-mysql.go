@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql"
@@ -27,9 +28,23 @@ func initDB() {
 	// 환경 변수에서 JSON 형태의 데이터베이스 연결 정보를 가져옵니다.
 	configJSON := os.Getenv("DB_CONFIG_JSON")
 	var config DBConfig
-	err := json.Unmarshal([]byte(configJSON), &config)
-	if err != nil {
-		log.Fatal("Failed to parse DB config:", err)
+	var err error
+
+	if configJSON == "" {
+		config.Host = os.Getenv("HOST")
+		config.Username = os.Getenv("USERNAME")
+		config.Password = os.Getenv("PASSWORD")
+		config.Port, err = strconv.Atoi(os.Getenv("PORT"))
+		config.Database = os.Getenv("DBNAME")
+
+		if err != nil {
+			log.Fatal("Not Normal Port:", err)
+		}
+	} else {
+		err := json.Unmarshal([]byte(configJSON), &config)
+		if err != nil {
+			log.Fatal("Failed to parse DB config:", err)
+		}
 	}
 
 	// RDS 엔드포인트를 사용하여 데이터베이스에 연결합니다.
